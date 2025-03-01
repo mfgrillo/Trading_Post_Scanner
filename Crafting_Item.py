@@ -21,33 +21,16 @@ HARDCODED_RECIPES = {
 
 debug_mode = False
 
-# opening cost per research note page
-
-
-# if debug_mode:
-#     research_note_price = 0
-# else:
-#     url = "https://fast.farming-community.eu/salvaging/costs-per-research-note"
-#     webbrowser.open(url)
-#     # There's no easy way to get the price of an individual research note. For now I'm asking for it explicitly. A future item would be automating this.
-#     research_note_price = float(input("Enter the price per Research Note from https://fast.farming-community.eu/salvaging/costs-per-research-note: "))
-
-GLOBAL_ITEM_LIBRARY = {} # Global item library to avoid redundant API calls
-
-call_tracker = 0
-call_tracker_name = 0
-call_tracker_recipe_id = 0
-call_tracker_recipe_data = 0
-call_tracker_price = 0
-
+GLOBAL_ITEM_LIBRARY = {} # Global item library to avoid redundant API calls, key is item ID, value is CraftingItem object. Item is stored here after it is fetched from the API.
 # %%
 class CraftingItem:
 
     def __init__(self, item_id):
-        self.item_id = item_id
+        self.item_id = item_id # Item ID from the API
         self.item_name = None  # Item name from the API
         self.base_ingredients = None  # Children items and their quantities
         self.raw_ingredients = None  # Raw ingredients for this item
+        self.raw_ingredients_dataframe = None  # self.raw_ingredients as a DataFrame
         self.recipe_id = None  # Recipe ID for this item
         self.recipe_data = None  # Full recipe data from the API
         self.price = None  # Current buy price from the API
@@ -56,14 +39,11 @@ class CraftingItem:
         self.volume = None  # Volume of this item
         self.profit_margin = None  # Profit margin of this item
         self.metrics_dict = {}  # Analysis metrics for this item
-        # self.output_item_count = 1  # Default output count (1 if not specified)
 
     @staticmethod
     def api_querier(url, params=None):
         """Static method to query the Guild Wars 2 API."""
         response = requests.get(url, params=params)
-
-        global call_tracker; call_tracker += 1
 
         if response.status_code == 200:
             return response.json()
@@ -127,7 +107,6 @@ class CraftingItem:
 
             url = f"https://api.guildwars2.com/v2/items/{self.item_id}?lang=en"
             response = self.api_querier(url)
-            global call_tracker_name; call_tracker_name += 1
 
             if response:
                 self.item_name = response["name"] 
@@ -151,7 +130,6 @@ class CraftingItem:
             # Otherwise, query the API
             url = f"https://api.guildwars2.com/v2/recipes/search?output={self.item_id}"
             response = self.api_querier(url)
-            global call_tracker_recipe_id; call_tracker_recipe_id += 1
 
             if not response:
                 return False
@@ -159,30 +137,24 @@ class CraftingItem:
                 self.recipe_id = response[0]  # Store the first recipe ID
                 if debug_mode:
                     print(f"Recipe ID for {self.item_name} is {self.recipe_id}")
-                # print(self.recipe_id)
                 return self.recipe_id
         return self.recipe_id
 
     def get_recipe_data(self):
         """Fetch and store the full recipe data for this item."""
-        if self.recipe_data is None:  # Only fetch if not already cached
 
-            if self.recipe_id:
-                url = f"https://api.guildwars2.com/v2/recipes?ids={self.recipe_id}&v=latest&lang=en"
-                self.recipe_data = self.api_querier(url)[0]
-                global call_tracker_recipe_data; call_tracker_recipe_data += 1
-                # print(self.recipe_data.get("output_item_count", 1))
-                # Some recipes output more than 1 item, tracking that number here
-                self.output_item_count = self.recipe_data.get("output_item_count", 1)
+        if self.recipe_id:
+            url = f"https://api.guildwars2.com/v2/recipes?ids={self.recipe_id}&v=latest&lang=en"
+            self.recipe_data = self.api_querier(url)[0]
+            # Some recipes output more than 1 item, tracking that number here
+            self.output_item_count = self.recipe_data.get("output_item_count", 1)
 
-                # print(self.recipe_data[0]["ingredients"])
-                if debug_mode:
-                    print(f"Recipe data for {self.item_name} is {self.recipe_data}")
+            if debug_mode:
+                print(f"Recipe data for {self.item_name} is {self.recipe_data}")
 
-                return self.recipe_data
-            else:
-                return False
-        return self.recipe_data
+            return self.recipe_data
+        else:
+            return False
 
     def fetch_ingredients(self):
         """
@@ -196,26 +168,22 @@ class CraftingItem:
         if self.recipe_data and "ingredients" in self.recipe_data:
             # Add children (base ingredients) to this item
             for ingredient in self.recipe_data["ingredients"]:
-                # if CraftingItem(ingredient["type"]) == "Item":
-                # print(ingredient)
-                # print(ingredient["type"])
                 if ingredient["type"] in ['Item', 'Currency']:
                     if ingredient["id"] in GLOBAL_ITEM_LIBRARY:
                         if debug_mode:
                             print(f"fetching {ingredient['id']} from global item library")
                         child_item = GLOBAL_ITEM_LIBRARY[ingredient["id"]]
                     else:
-                        # print(ingredient["type"])
                         child_item = CraftingItem(ingredient["id"])
 
                         # get data necessary for recursion
                         child_item.get_everything_child()
-                        # disabling item library for now
                         GLOBAL_ITEM_LIBRARY[ingredient["id"]] = child_item # Add to global item library
                         
                     child_quantity = ingredient["count"] / self.output_item_count
-                    # child_item.fetch_ingredients()  # Recursively fetch children, commenting out temporarily as a test
+
                     self.base_ingredients[child_item] = child_quantity
+
                     if debug_mode:
                         print(f"ingredients for {self.item_name} are {self.base_ingredients}")
         else:
@@ -226,8 +194,6 @@ class CraftingItem:
         """
         Fetch the current buy price of this item from the API.
         """
-        # Query the API
-        # print(self.item_id)
         if self.item_id == 61:
             if debug_mode:
                 research_note_price = 0
@@ -237,20 +203,14 @@ class CraftingItem:
                 # There's no easy way to get the price of an individual research note. For now I'm asking for it explicitly. A future item would be automating this.
                 research_note_price = float(input("Enter the price per Research Note from https://fast.farming-community.eu/salvaging/costs-per-research-note: "))
             self.price = research_note_price
-            return self.price
-        
-
-            
+            return self.price 
 
         url = f"https://api.guildwars2.com/v2/commerce/prices/{self.item_id}"
         response = self.api_querier(url)
-        global call_tracker_price; call_tracker_price += 1
 
         if not response:
             self.price = None # Set price to None if not found
             return False
-        
-        # print(response)
         
         # For items not on TP, return default value (None)
         if not response.get("buys"):
@@ -270,8 +230,6 @@ class CraftingItem:
 
         return self.price   
 
-    
-    # test
     def get_raw_ingredients(self, eldest_raw_ingredients=None, parent_quantity=1, parent_id=None):
         """
         Recursively calculate the total base (gatherable) ingredients required to craft this item.
@@ -311,7 +269,6 @@ class CraftingItem:
                     parent_quantity = 1
                 
                 if debug_mode:
-                    # print(f"")
                     print(f"attaching {quantity * parent_quantity} {child.item_name}'s to eldest_raw_ingredients in {self.item_name}")
 
                 if child.item_id in eldest_raw_ingredients:
@@ -320,10 +277,12 @@ class CraftingItem:
                     eldest_raw_ingredients[child.item_id] = {
                         "name": child.item_name,
                         "amount_needed": quantity * parent_quantity,
-                        "unit_price": child.price
+                        "unit_price": child.price / 10000
                     }
 
         self.raw_ingredients = eldest_raw_ingredients
+
+        self.raw_ingredients_dataframe = pd.DataFrame.from_dict(self.raw_ingredients, orient='index')
 
         if debug_mode:
             print(f"Total raw ingredients for {self.item_name} are {self.raw_ingredients}")
@@ -342,14 +301,11 @@ class CraftingItem:
         # Calculate the total crafting cost
 
         for item in self.raw_ingredients:
-            # print(item)
             if self.raw_ingredients[item]["unit_price"] == None:
                 continue
             
             self.raw_ingredients[item]["total_cost"] = self.raw_ingredients[item]["amount_needed"] * self.raw_ingredients[item]["unit_price"]
             self.crafting_cost += self.raw_ingredients[item]["total_cost"]
-            # print(self.raw_ingredients[item]["total_cost"])
-            # print(self.raw_ingredients[item]["total_cost"])
 
         if debug_mode:
             print(f"Crafting cost for {self.item_name} is {self.crafting_cost / 10000:.2f} gold")
@@ -364,18 +320,18 @@ class CraftingItem:
         if self.price_instant is None or self.crafting_cost is None:
             raise ValueError("Price or crafting cost is not available for this item.")
 
-        # debug
         if debug_mode:
             print(f"price is {self.price / 10000:.2f} for a cost of {self.crafting_cost / 10000:.2f} gold")
 
         # 15% tax on selling price
         self.profit_margin = (self.price_instant * 0.85 - self.crafting_cost) / 10000
         print(f"Profit margin for {self.item_name} is {self.profit_margin} gold per item")
+
         return self.profit_margin
     
     def get_analysis_metrics(self):
         """
-        Get all analysis metrics for this item.
+        Get all analysis metrics for this item. This helps inform decisions on what items to craft
         """
         # Fetch all data if not already done
         self.get_everything()
@@ -384,9 +340,6 @@ class CraftingItem:
         self.metrics_dict["item_id"] = self.item_id
         self.metrics_dict["total_raw_resources"] = sum(item['amount_needed'] for item in self.raw_ingredients.values())
         self.metrics_dict["profit_margin"] = self.profit_margin
-
-        # print(self.metrics_dict["total_raw_resources"])
-        # print(self.profit_margin)
 
         self.metrics_dict["profit_per_raw"] = (
             self.metrics_dict["profit_margin"] / self.metrics_dict["total_raw_resources"]
@@ -402,4 +355,4 @@ class CraftingItem:
         return self.metrics_dict
 
     def __repr__(self):
-        return f"CraftingItem(item_name = {self.item_name}, item_id={self.item_id}, recipe_id={self.recipe_id}, base_ingredients={self.base_ingredients})"
+        return f"CraftingItem(item_name = {self.item_name}, item_id={self.item_id}, recipe_id={self.recipe_id}, raw_ingredients={self.raw_ingredients})"
