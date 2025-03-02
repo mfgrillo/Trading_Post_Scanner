@@ -16,6 +16,10 @@ HARDCODED_RECIPES = {
     96070: 13841,  # Core tier 9
     96613: 13628,  # Core tier 10
 
+    100941: 14018, # Rare Rift Motivation
+    100364: 14029, # Masterwork Rift Motivation
+    100060: 13957, # Fine Rift Motivation
+
     97487: 13839  # Piece of Dragon Jade
 }
 
@@ -38,6 +42,7 @@ class CraftingItem:
         self.crafting_cost = 0  # Total crafting cost of this item
         self.volume = None  # Volume of this item
         self.profit_margin = None  # Profit margin of this item
+        self.profit_margin_insta = None # Profit margin of this item using instant sell price
         self.metrics_dict = {}  # Analysis metrics for this item
 
     @staticmethod
@@ -201,7 +206,7 @@ class CraftingItem:
                 url = "https://fast.farming-community.eu/salvaging/costs-per-research-note"
                 webbrowser.open(url)
                 # There's no easy way to get the price of an individual research note. For now I'm asking for it explicitly. A future item would be automating this.
-                research_note_price = float(input("Enter the price per Research Note from https://fast.farming-community.eu/salvaging/costs-per-research-note: "))
+                research_note_price = float(input("Enter the price per Research Note from https://fast.farming-community.eu/salvaging/costs-per-research-note: ")) / 10000
             self.price = research_note_price
             return self.price 
 
@@ -209,23 +214,25 @@ class CraftingItem:
         response = self.api_querier(url)
 
         if not response:
-            self.price = None # Set price to None if not found
+            print(f"Warning: Price not found for {self.item_name}, it is likely {self.item_name} is an account bound item")
+            self.price = 0 # Set price to None if not found
             return False
         
         # For items not on TP, return default value (None)
         if not response.get("buys"):
-            self.price = None
+            print(f"Warning: Price not found for {self.item_name}, it is likely {self.item_name} is an account bound item")
+            self.price = 0
             return self.price
 
         self.volume = response["sells"]["quantity"] + response["buys"]["quantity"]
 
-        self.price_instant = response["sells"]["unit_price"]
+        self.price_instant = response["sells"]["unit_price"] / 10000
 
-        self.price = response["buys"]["unit_price"] if response["buys"]["unit_price"] != 0 else self.price_instant
+        self.price = response["buys"]["unit_price"] / 10000 if response["buys"]["unit_price"] != 0 else self.price_instant
 
         if debug_mode:
-            print(f"Price for {self.item_name} is {self.price / 10000:.2f} gold")
-            print(f"Instant price for {self.item_name} is {self.price_instant / 10000:.2f} gold")
+            print(f"Price for {self.item_name} is {self.price :.2f} gold")
+            print(f"Instant price for {self.item_name} is {self.price_instant :.2f} gold")
             print(f"Volume for {self.item_name} is {self.volume}")
 
         return self.price   
@@ -277,7 +284,7 @@ class CraftingItem:
                     eldest_raw_ingredients[child.item_id] = {
                         "name": child.item_name,
                         "amount_needed": quantity * parent_quantity,
-                        "unit_price": child.price / 10000
+                        "unit_price": child.price 
                     }
 
         self.raw_ingredients = eldest_raw_ingredients
@@ -308,7 +315,7 @@ class CraftingItem:
             self.crafting_cost += self.raw_ingredients[item]["total_cost"]
 
         if debug_mode:
-            print(f"Crafting cost for {self.item_name} is {self.crafting_cost / 10000:.2f} gold")
+            print(f"Crafting cost for {self.item_name} is {self.crafting_cost :.2f} gold")
         
         return self.crafting_cost
     
@@ -321,10 +328,12 @@ class CraftingItem:
             raise ValueError("Price or crafting cost is not available for this item.")
 
         if debug_mode:
-            print(f"price is {self.price / 10000:.2f} for a cost of {self.crafting_cost / 10000:.2f} gold")
+            print(f"price is {self.price :.2f} for a cost of {self.crafting_cost :.2f} gold")
 
         # 15% tax on selling price
-        self.profit_margin = (self.price_instant * 0.85 - self.crafting_cost) / 10000
+        self.profit_margin_insta = (self.price * 0.85 - self.crafting_cost)
+        self.profit_margin = (self.price_instant * 0.85 - self.crafting_cost) 
+        
         print(f"Profit margin for {self.item_name} is {self.profit_margin} gold per item")
 
         return self.profit_margin
@@ -347,8 +356,16 @@ class CraftingItem:
             else 0
         )
 
-        self.metrics_dict["crafting_cost"] = self.crafting_cost / 10000
-        self.metrics_dict["price_sell"] = self.price_instant / 10000
+        self.metrics_dict["profit_margin_insta"] = self.profit_margin_insta
+
+        self.metrics_dict["profit_per_raw_insta"] = (
+            self.metrics_dict["profit_margin_insta"] / self.metrics_dict["total_raw_resources"]
+            if self.metrics_dict["total_raw_resources"] != 0
+            else 0
+        )
+
+        self.metrics_dict["crafting_cost"] = self.crafting_cost 
+        self.metrics_dict["price_sell"] = self.price_instant 
         self.metrics_dict["gap_%"] = 1 - (self.price / self.price_instant) if self.price_instant != 0 else 0
         self.metrics_dict["volume"] = self.volume
 
