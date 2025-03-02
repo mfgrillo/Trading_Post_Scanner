@@ -203,6 +203,7 @@ class CraftingItem:
             if debug_mode:
                 research_note_price = 0
             else:
+                print("Research Note price is currently not supported. Please enter the price manually.")
                 url = "https://fast.farming-community.eu/salvaging/costs-per-research-note"
                 webbrowser.open(url)
                 # There's no easy way to get the price of an individual research note. For now I'm asking for it explicitly. A future item would be automating this.
