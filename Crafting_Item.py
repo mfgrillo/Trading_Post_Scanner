@@ -23,6 +23,8 @@ HARDCODED_RECIPES = {
     97487: 13839  # Piece of Dragon Jade
 }
 
+
+
 debug_mode = False
 
 GLOBAL_ITEM_LIBRARY = {} # Global item library to avoid redundant API calls, key is item ID, value is CraftingItem object. Item is stored here after it is fetched from the API.
@@ -31,6 +33,7 @@ class CraftingItem:
 
     def __init__(self, item_id):
         self.item_id = item_id # Item ID from the API
+        self.item_type = None  # Item type from the API, e.g. "Item", "Currency", etc.
         self.item_name = None  # Item name from the API
         self.base_ingredients = None  # Children items and their quantities
         self.raw_ingredients = None  # Raw ingredients for this item
@@ -85,33 +88,43 @@ class CraftingItem:
 
     def get_everything_child(self):
         """Get child data, necessary for recursion."""
-        
-        if self.item_name is None:
-            self.get_item_name()
 
-        if self.recipe_id is None:
-            self.get_recipe_id()
+        if self.item_type == "Currency":
+            # For currencies, we only need the item name and price (for Research Notes)
+            if self.item_name is None:
+                self.get_item_name()
+            if self.price is None:
+                self.get_item_price()
 
-        if self.recipe_data is None:
-            self.get_recipe_data()
+        else:        
+            if self.item_name is None:
+                self.get_item_name()
 
-        if self.base_ingredients is None:
-            self.fetch_ingredients()
+            if self.recipe_id is None:
+                self.get_recipe_id()
 
-        if len(self.base_ingredients) == 0 and self.price is None:
-            self.get_item_price()
+            if self.recipe_data is None:
+                self.get_recipe_data()
+
+            if self.base_ingredients is None:
+                self.fetch_ingredients()
+
+            if len(self.base_ingredients) == 0 and self.price is None:
+                self.get_item_price()
     
         
     def get_item_name(self):
         """Fetch the name of this item from the API."""
         if self.item_name is None:
             # ID 61 is for research notes, which are from a different set of ids since they are a currency, cannot be queried from the API so hardcoding it
-            if self.item_id == 61:
-                self.item_name = "Research Note"
-                return self.item_name
-
-            url = f"https://api.guildwars2.com/v2/items/{self.item_id}?lang=en"
-            response = self.api_querier(url)
+            if self.item_type == "Currency":
+                url = f"https://api.guildwars2.com/v2/currencies?ids={self.item_id}"
+                response = self.api_querier(url)[0]
+                # self.item_name = "Research Note"
+                # return self.item_name
+            else:
+                url = f"https://api.guildwars2.com/v2/items/{self.item_id}?lang=en"   
+                response = self.api_querier(url)
 
             if response:
                 self.item_name = response["name"] 
@@ -180,9 +193,12 @@ class CraftingItem:
                         child_item = GLOBAL_ITEM_LIBRARY[ingredient["id"]]
                     else:
                         child_item = CraftingItem(ingredient["id"])
+                        child_item.item_type = ingredient["type"]
 
                         # get data necessary for recursion
                         child_item.get_everything_child()
+
+                        # child_item.get_everything_child()
                         GLOBAL_ITEM_LIBRARY[ingredient["id"]] = child_item # Add to global item library
                         
                     child_quantity = ingredient["count"] / self.output_item_count
@@ -199,17 +215,21 @@ class CraftingItem:
         """
         Fetch the current buy price of this item from the API.
         """
-        if self.item_id == 61:
-            if debug_mode:
-                research_note_price = 0
+        if self.item_type == "Currency":
+            if self.item_id == 61:
+                if debug_mode:
+                    research_note_price = 0
+                else:
+                    print("Research Note price is currently not supported. Please enter the price manually.")
+                    url = "https://fast.farming-community.eu/salvaging/costs-per-research-note"
+                    webbrowser.open(url)
+                    # There's no easy way to get the price of an individual research note. For now I'm asking for it explicitly. A future item would be automating this.
+                    research_note_price = float(input("Enter the price per Research Note from https://fast.farming-community.eu/salvaging/costs-per-research-note: ")) / 10000
+                self.price = research_note_price
+                return self.price
             else:
-                print("Research Note price is currently not supported. Please enter the price manually.")
-                url = "https://fast.farming-community.eu/salvaging/costs-per-research-note"
-                webbrowser.open(url)
-                # There's no easy way to get the price of an individual research note. For now I'm asking for it explicitly. A future item would be automating this.
-                research_note_price = float(input("Enter the price per Research Note from https://fast.farming-community.eu/salvaging/costs-per-research-note: ")) / 10000
-            self.price = research_note_price
-            return self.price 
+                self.price = 0  # Non Research Note Currencies do not have a price, set to 0
+                return self.price
 
         url = f"https://api.guildwars2.com/v2/commerce/prices/{self.item_id}"
         response = self.api_querier(url)
@@ -254,10 +274,11 @@ class CraftingItem:
 
         for child, quantity in self.base_ingredients.items():
             # Fetch the item name and price for the child
-            child.get_everything_child()            
+
+            child.get_everything_child()  
 
             # If the child has its own ingredients, recurse
-            if len(child.base_ingredients) > 0:
+            if child.base_ingredients:
                 
                 # In cases where a craftable item is nested inside another craftable item and the parent has a quantity greater than 1, we need to multiply the child's quantity by the parent's quantity
                 if parent_id == self.item_id:
@@ -369,6 +390,10 @@ class CraftingItem:
         self.metrics_dict["price_sell"] = self.price_instant 
         self.metrics_dict["gap_%"] = 1 - (self.price / self.price_instant) if self.price_instant != 0 else 0
         self.metrics_dict["volume"] = self.volume
+
+        for id in self.raw_ingredients:
+            if self.raw_ingredients[id]['unit_price'] == 0:
+                print(f"Warning: {self.item_name} has {self.raw_ingredients[id]['name']} as an ingredient, this is likely an account bound item/currency and will thus not be included in the profit margin calculation")
 
         return self.metrics_dict
 
