@@ -221,10 +221,10 @@ class CraftingItem:
                     research_note_price = 0
                 else:
                     print("Research Note price is currently not supported. Please enter the price manually.")
-                    url = "https://fast.farming-community.eu/salvaging/costs-per-research-note"
+                    url = "https://fast.farming-community.eu/farming/calculator?item=salvaging-costs-per-research-note"
                     webbrowser.open(url)
                     # There's no easy way to get the price of an individual research note. For now I'm asking for it explicitly. A future item would be automating this.
-                    research_note_price = float(input("Enter the price per Research Note from https://fast.farming-community.eu/salvaging/costs-per-research-note: ")) / 10000
+                    research_note_price = float(input("Enter the price per Research Note from https://fast.farming-community.eu/farming/calculator?item=salvaging-costs-per-research-note: ")) / 10000
                 self.price = research_note_price
                 return self.price
             else:
