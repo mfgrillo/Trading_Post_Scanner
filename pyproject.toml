@@ -1,0 +1,13 @@
+[project]
+name = "jade-core-bot"
+version = "0.1.0"
+description = "Jade Core Bot"
+requires-python = ">=3.9"
+dependencies = [
+    "pandas==2.2.2",
+    "seaborn==0.13.2",
+    "matplotlib==3.8.4",
+    "requests>=2.32.5",
+]
+
+[tool.uv]
